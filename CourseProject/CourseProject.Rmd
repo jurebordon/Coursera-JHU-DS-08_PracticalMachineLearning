@@ -1,0 +1,110 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Jure Bordon"
+date: "Sunday, June 21, 2015"
+output: html_document
+fontsize: 10pt
+---
+
+```{r,echo=FALSE,cache=FALSE,results='hide',warning=FALSE,message=FALSE}
+library(caret)
+library(randomForest)
+```
+
+# Summary
+
+Using different personal measurement device a large amount of data can now be collected. The data we will use in this project are used to quantify how much of a particular activity was done by a certain person. We will use the data from accelerometers of belt, forearm, arm and dumbell of 6 different participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). Our task is to predict the manner in which they did the exercise based on the measurements. You can find the training data using url https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv and test data using url https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv.
+
+# Preliminary analysis and data cleaning
+
+## Our data
+
+Since we will use some random number generation we need to set the seed for our analysis to be reproducible. We will set our seed to 2015. We assume that the files for training and test data are in our working directory:
+
+```{r}
+set.seed(2015)
+pmlTest <- read.csv("pml-testing.csv")
+pmlTrain <- read.csv("pml-training.csv")
+```
+
+The outcome variable for this data set will be a factor variable classe with possible values A, B, C, D and E, where A means exercise was performed according to the specificification while the other four classes are common mistakes when doing barbell lifts.
+
+## Preprocessing and cleaning
+
+Examine the data:
+
+```{r}
+str(pmlTrain)
+```
+
+We can delete the first seven columns as they are irrelevant to our prediction:
+
+```{r}
+pmlTest <- pmlTest[,-c(1:7)]
+pmlTrain <- pmlTrain[,-c(1:7)]
+```
+
+Since this dataset has a lot of features we will try to eliminte those with near zero variance, since they will not contribute much to the prediction of our outcome:
+
+```{r}
+nzv_index <- nearZeroVar(pmlTrain)
+pmlTrain <- pmlTrain[,-nzv_index]
+pmlTest <- pmlTest[,-nzv_index]
+```
+
+In addition, we can see that some variables have a lot of missing values. We want to eliminate columns with many NAs as they will not contribute much when we are building our model. By inspecting all columns we can see that columns either have no NAs or they have more than 97% of measurements as NAs, so we remove those that have non-zero number of NAs:
+
+```{r}
+NA_index <- sapply(pmlTrain,function(x) sum(is.na(x)) == 0)
+pmlTrain <- pmlTrain[,which(NA_index)]
+pmlTest <- pmlTest[,which(NA_index)]
+```
+
+
+We then split our training data into two parts, since we want to estimate the out-of-sample error. The training set is randomly split into training set and validation set:
+
+```{r}
+inTrain <- createDataPartition(y=pmlTrain$classe, p=0.75, list = FALSE)
+pmlTrainT <- pmlTrain[inTrain,]
+pmlTrainV <- pmlTrain[-inTrain,]
+```
+
+## Building and validating our model
+
+Due to high accuracy of Random forests prediction we will use it to build our model. We will include a 5-fold cross validation control:
+
+```{r, cache=TRUE}
+modelFit <- train(classe ~ ., method="rf", trControl=trainControl(method="cv",5), data=pmlTrainT)
+```
+
+We now test our model against validation set and check the accuracy of prediction:
+
+```{r}
+predictV <- predict(modelFit,pmlTrainV)
+confusionMatrix(pmlTrainV$classe,predictV)
+```
+
+We can see that our model predicted with 99.23% accuracy which is more than enough for this case.
+
+## Using our model on the test set
+
+We now use our model to predict the test values (which we preprocessed in the same way we did the training data):
+
+```{r}
+predictT <- predict(modelFit,pmlTest)
+predictT
+```
+
+We use the function from the submission instructions to generate the files for submission:
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictT)
+```
